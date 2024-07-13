@@ -46,7 +46,7 @@ def run(args: DictConfig):
     # ------------------
     #     Optimizer
     # ------------------
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,weight_decay=0.001)
 
     # ------------------
     #   Start training
@@ -55,6 +55,9 @@ def run(args: DictConfig):
     accuracy = Accuracy(
         task="multiclass", num_classes=train_set.num_classes, top_k=10
     ).to(args.device)
+
+    early_stop_count = 0
+    early_stop_threshold = 20
       
     for epoch in range(args.epochs):
         print(f"Epoch {epoch+1}/{args.epochs}")
@@ -86,16 +89,24 @@ def run(args: DictConfig):
             
             val_loss.append(F.cross_entropy(y_pred, y).item())
             val_acc.append(accuracy(y_pred, y).item())
-
+        mean_val_acc=np.mean(val_acc)
         print(f"Epoch {epoch+1}/{args.epochs} | train loss: {np.mean(train_loss):.3f} | train acc: {np.mean(train_acc):.3f} | val loss: {np.mean(val_loss):.3f} | val acc: {np.mean(val_acc):.3f}")
         torch.save(model.state_dict(), os.path.join(logdir, "model_last.pt"))
         if args.use_wandb:
             wandb.log({"train_loss": np.mean(train_loss), "train_acc": np.mean(train_acc), "val_loss": np.mean(val_loss), "val_acc": np.mean(val_acc)})
         
-        if np.mean(val_acc) > max_val_acc:
+        if mean_val_acc > max_val_acc:
             cprint("New best.", "cyan")
             torch.save(model.state_dict(), os.path.join(logdir, "model_best.pt"))
-            max_val_acc = np.mean(val_acc)
+            max_val_acc = mean_val_acc
+            early_stop_count = 0
+        else:
+            early_stop_count += 1
+
+        if early_stop_count >= early_stop_threshold:
+            cprint("Early stopping due to no improvement.", "red")
+            break
+    
             
     
     # ----------------------------------
